@@ -1933,9 +1933,11 @@ type CompactCommand struct {
 	Stdout io.Writer
 	Stderr io.Writer
 
-	SrcPath   string
-	DstPath   string
-	TxMaxSize int64
+	SrcPath           string
+	DstPath           string
+	TxMaxSize         int64
+	DstNoSync         bool
+	DstNoFreelistSync bool
 }
 
 // newCompactCommand returns a CompactCommand.
@@ -1954,6 +1956,8 @@ func (cmd *CompactCommand) Run(args ...string) (err error) {
 	fs.SetOutput(ioutil.Discard)
 	fs.StringVar(&cmd.DstPath, "o", "", "")
 	fs.Int64Var(&cmd.TxMaxSize, "tx-max-size", 65536, "")
+	fs.BoolVar(&cmd.DstNoSync, "no-sync", false, "")
+	fs.BoolVar(&cmd.DstNoFreelistSync, "no-freelist-sync", false, "")
 	if err := fs.Parse(args); err == flag.ErrHelp {
 		fmt.Fprintln(cmd.Stderr, cmd.Usage())
 		return ErrUsage
@@ -1992,6 +1996,10 @@ func (cmd *CompactCommand) Run(args ...string) (err error) {
 	}
 	defer dst.Close()
 
+	// Optionally disable sync operations for increased performance
+	dst.NoSync = cmd.DstNoSync
+	dst.NoFreelistSync = cmd.DstNoFreelistSync
+
 	// Run compaction.
 	if err := bolt.Compact(dst, src, cmd.TxMaxSize); err != nil {
 		return err
@@ -2024,5 +2032,13 @@ Additional options include:
 	-tx-max-size NUM
 		Specifies the maximum size of individual transactions.
 		Defaults to 64KB.
+
+	-no-sync BOOL
+		Skip fsync() calls after each commit (fast but unsafe)
+		Defaults to false
+
+	-no-freelist-sync BOOL
+		Skip syncing freelists to disk (fast but unsafe)
+		Defaults to false
 `, "\n")
 }
