@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -20,6 +21,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	bolt "go.etcd.io/bbolt"
+	berrors "go.etcd.io/bbolt/errors"
 	"go.etcd.io/bbolt/internal/btesting"
 )
 
@@ -47,7 +49,7 @@ func TestOpen(t *testing.T) {
 	path := tempfile()
 	defer os.RemoveAll(path)
 
-	db, err := bolt.Open(path, 0666, nil)
+	db, err := bolt.Open(path, 0600, nil)
 	if err != nil {
 		t.Fatal(err)
 	} else if db == nil {
@@ -106,7 +108,7 @@ func TestOpen_MultipleGoroutines(t *testing.T) {
 
 // Ensure that opening a database with a blank path returns an error.
 func TestOpen_ErrPathRequired(t *testing.T) {
-	_, err := bolt.Open("", 0666, nil)
+	_, err := bolt.Open("", 0600, nil)
 	if err == nil {
 		t.Fatalf("expected error")
 	}
@@ -114,7 +116,7 @@ func TestOpen_ErrPathRequired(t *testing.T) {
 
 // Ensure that opening a database with a bad path returns an error.
 func TestOpen_ErrNotExists(t *testing.T) {
-	_, err := bolt.Open(filepath.Join(tempfile(), "bad-path"), 0666, nil)
+	_, err := bolt.Open(filepath.Join(tempfile(), "bad-path"), 0600, nil)
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -136,7 +138,7 @@ func TestOpen_ErrInvalid(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, err := bolt.Open(path, 0666, nil); err != bolt.ErrInvalid {
+	if _, err := bolt.Open(path, 0600, nil); err != berrors.ErrInvalid {
 		t.Fatalf("unexpected error: %s", err)
 	}
 }
@@ -172,7 +174,7 @@ func TestOpen_ErrVersionMismatch(t *testing.T) {
 	}
 
 	// Reopen data file.
-	if _, err := bolt.Open(path, 0666, nil); err != bolt.ErrVersionMismatch {
+	if _, err := bolt.Open(path, 0600, nil); err != berrors.ErrVersionMismatch {
 		t.Fatalf("unexpected error: %s", err)
 	}
 }
@@ -208,7 +210,7 @@ func TestOpen_ErrChecksum(t *testing.T) {
 	}
 
 	// Reopen data file.
-	if _, err := bolt.Open(path, 0666, nil); err != bolt.ErrChecksum {
+	if _, err := bolt.Open(path, 0600, nil); err != berrors.ErrChecksum {
 		t.Fatalf("unexpected error: %s", err)
 	}
 }
@@ -364,7 +366,7 @@ func TestOpen_Size_Large(t *testing.T) {
 	}
 
 	// Reopen database, update, and check size again.
-	db0, err := bolt.Open(path, 0666, nil)
+	db0, err := bolt.Open(path, 0600, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -394,7 +396,7 @@ func TestOpen_Check(t *testing.T) {
 	path := tempfile()
 	defer os.RemoveAll(path)
 
-	db, err := bolt.Open(path, 0666, nil)
+	db, err := bolt.Open(path, 0600, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -405,7 +407,7 @@ func TestOpen_Check(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	db, err = bolt.Open(path, 0666, nil)
+	db, err = bolt.Open(path, 0600, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -427,7 +429,7 @@ func TestOpen_FileTooSmall(t *testing.T) {
 	path := tempfile()
 	defer os.RemoveAll(path)
 
-	db, err := bolt.Open(path, 0666, nil)
+	db, err := bolt.Open(path, 0600, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -441,8 +443,8 @@ func TestOpen_FileTooSmall(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, err = bolt.Open(path, 0666, nil)
-	if err == nil || err.Error() != "file size too small" {
+	_, err = bolt.Open(path, 0600, nil)
+	if err == nil || !strings.Contains(err.Error(), "file size too small") {
 		t.Fatalf("unexpected error: %s", err)
 	}
 }
@@ -458,7 +460,7 @@ func TestDB_Open_InitialMmapSize(t *testing.T) {
 	initMmapSize := 1 << 30  // 1GB
 	testWriteSize := 1 << 27 // 134MB
 
-	db, err := bolt.Open(path, 0666, &bolt.Options{InitialMmapSize: initMmapSize})
+	db, err := bolt.Open(path, 0600, &bolt.Options{InitialMmapSize: initMmapSize})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -531,7 +533,7 @@ func TestDB_Open_ReadOnly(t *testing.T) {
 
 	f := db.Path()
 	o := &bolt.Options{ReadOnly: true}
-	readOnlyDB, err := bolt.Open(f, 0666, o)
+	readOnlyDB, err := bolt.Open(f, 0600, o)
 	if err != nil {
 		panic(err)
 	}
@@ -552,13 +554,19 @@ func TestDB_Open_ReadOnly(t *testing.T) {
 	}
 
 	// Can't launch read-write transaction.
-	if _, err := readOnlyDB.Begin(true); err != bolt.ErrDatabaseReadOnly {
+	if _, err := readOnlyDB.Begin(true); err != berrors.ErrDatabaseReadOnly {
 		t.Fatalf("unexpected error: %s", err)
 	}
 
 	if err := readOnlyDB.Close(); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func TestDB_Open_ReadOnly_NoCreate(t *testing.T) {
+	f := filepath.Join(t.TempDir(), "db")
+	_, err := bolt.Open(f, 0600, &bolt.Options{ReadOnly: true})
+	require.ErrorIs(t, err, os.ErrNotExist)
 }
 
 // TestOpen_BigPage checks the database uses bigger pages when
@@ -641,7 +649,7 @@ func TestOpen_RecoverFreeList(t *testing.T) {
 // Ensure that a database cannot open a transaction when it's not open.
 func TestDB_Begin_ErrDatabaseNotOpen(t *testing.T) {
 	var db bolt.DB
-	if _, err := db.Begin(false); err != bolt.ErrDatabaseNotOpen {
+	if _, err := db.Begin(false); err != berrors.ErrDatabaseNotOpen {
 		t.Fatalf("unexpected error: %s", err)
 	}
 }
@@ -727,7 +735,7 @@ func TestDB_Concurrent_WriteTo(t *testing.T) {
 // Ensure that opening a transaction while the DB is closed returns an error.
 func TestDB_BeginRW_Closed(t *testing.T) {
 	var db bolt.DB
-	if _, err := db.Begin(true); err != bolt.ErrDatabaseNotOpen {
+	if _, err := db.Begin(true); err != berrors.ErrDatabaseNotOpen {
 		t.Fatalf("unexpected error: %s", err)
 	}
 }
@@ -746,11 +754,15 @@ func testDB_Close_PendingTx(t *testing.T, writable bool) {
 	}
 
 	// Open update in separate goroutine.
+	startCh := make(chan struct{}, 1)
 	done := make(chan error, 1)
 	go func() {
+		startCh <- struct{}{}
 		err := db.Close()
 		done <- err
 	}()
+	// wait for the above goroutine to get scheduled.
+	<-startCh
 
 	// Ensure database hasn't closed.
 	time.Sleep(100 * time.Millisecond)
@@ -774,14 +786,13 @@ func testDB_Close_PendingTx(t *testing.T, writable bool) {
 	}
 
 	// Ensure database closed now.
-	time.Sleep(100 * time.Millisecond)
 	select {
 	case err := <-done:
 		if err != nil {
 			t.Fatalf("error from inside goroutine: %v", err)
 		}
-	default:
-		t.Fatal("database did not close")
+	case <-time.After(5 * time.Second):
+		t.Fatalf("database did not close")
 	}
 }
 
@@ -828,7 +839,7 @@ func TestDB_Update_Closed(t *testing.T) {
 			t.Fatal(err)
 		}
 		return nil
-	}); err != bolt.ErrDatabaseNotOpen {
+	}); err != berrors.ErrDatabaseNotOpen {
 		t.Fatalf("unexpected error: %s", err)
 	}
 }
@@ -1337,7 +1348,7 @@ func TestDBUnmap(t *testing.T) {
 
 func ExampleDB_Update() {
 	// Open the database.
-	db, err := bolt.Open(tempfile(), 0666, nil)
+	db, err := bolt.Open(tempfile(), 0600, nil)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -1377,7 +1388,7 @@ func ExampleDB_Update() {
 
 func ExampleDB_View() {
 	// Open the database.
-	db, err := bolt.Open(tempfile(), 0666, nil)
+	db, err := bolt.Open(tempfile(), 0600, nil)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -1420,7 +1431,7 @@ func ExampleDB_View() {
 
 func ExampleDB_Begin() {
 	// Open the database.
-	db, err := bolt.Open(tempfile(), 0666, nil)
+	db, err := bolt.Open(tempfile(), 0600, nil)
 	if err != nil {
 		log.Fatal(err)
 	}

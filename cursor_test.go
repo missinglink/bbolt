@@ -12,6 +12,7 @@ import (
 	"testing/quick"
 
 	bolt "go.etcd.io/bbolt"
+	"go.etcd.io/bbolt/errors"
 	"go.etcd.io/bbolt/internal/btesting"
 )
 
@@ -139,7 +140,7 @@ func TestCursor_Delete(t *testing.T) {
 		}
 
 		c.Seek([]byte("sub"))
-		if err := c.Delete(); err != bolt.ErrIncompatibleValue {
+		if err := c.Delete(); err != errors.ErrIncompatibleValue {
 			t.Fatalf("unexpected error: %s", err)
 		}
 
@@ -743,7 +744,7 @@ func TestCursor_QuickCheck_BucketsOnly_Reverse(t *testing.T) {
 
 func ExampleCursor() {
 	// Open the database.
-	db, err := bolt.Open(tempfile(), 0666, nil)
+	db, err := bolt.Open(tempfile(), 0600, nil)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -797,7 +798,7 @@ func ExampleCursor() {
 
 func ExampleCursor_reverse() {
 	// Open the database.
-	db, err := bolt.Open(tempfile(), 0666, nil)
+	db, err := bolt.Open(tempfile(), 0600, nil)
 	if err != nil {
 		log.Fatal(err)
 	}
